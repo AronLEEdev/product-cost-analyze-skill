@@ -31,20 +31,29 @@ See the table in [`SKILL.md`](./SKILL.md#preconditions--setup-read-once). In sho
 | Amazon — logged-in Chrome profile | recommended |
 | Helium 10 extension | optional |
 
-## Setup
+## Install & setup
+
+**To use the skill, you only need `SKILL.md`** — upload/add that one file to
+Claude. You do **not** need to clone this repo. At run time the skill writes its
+Phase 3 helper (`calc.mjs`, embedded in `SKILL.md`) into the run dir and fetches
+the Phase 4 report template from this repo, so the two runtime assets appear on
+demand.
 
 ```bash
-# Node ≥ 18 and Python 3 must be on PATH (calc.mjs needs built-in fetch + node:test)
+# Node ≥ 18 and Python 3 must be on PATH (the Phase 3 helper needs Node's built-in fetch)
 node --version && python3 --version
 
 # Store the Profitlee API token once, in ~/.claude/settings.json:
 #   { "env": { "PROFITLEE_API_TOKEN": "<your token>" } }
 # Verify it's visible (never print the value):
 node -e "console.log(process.env.PROFITLEE_API_TOKEN ? 'PRESENT' : 'MISSING')"
-
-# Run the calc engine's tests:
-node --test calc.test.mjs
 ```
+
+> **Maintainers:** `calc.mjs` + `calc.test.mjs` in this repo are the **tested
+> source** for the Phase 3 helper; the copy embedded in `SKILL.md` §3.2 mirrors
+> `calc.mjs` verbatim. Edit `calc.mjs`, run `node --test calc.test.mjs`, then
+> re-sync the embedded block. `report-template.html` is served from this repo's
+> `main` branch (raw URL) — keep it published.
 
 ---
 
@@ -169,10 +178,10 @@ by 100 for the report (which renders whole percents).
 ## Files
 
 ```
-SKILL.md              # the procedure Claude follows (4 phases)
-calc.mjs              # Phase 3 helper: products.json + fob.json -> results.js (calls the API)
-calc.test.mjs         # node:test unit tests for calc.mjs
-report-template.html  # static report; reads results.js (window.__FBA_DATA__)
+SKILL.md              # ← the ONLY file end users need (Phase-3 calc.mjs is embedded inside)
+calc.mjs              # maintainer source for the Phase 3 helper (mirrored into SKILL.md §3.2)
+calc.test.mjs         # node:test unit tests for calc.mjs (maintainers)
+report-template.html  # Phase 4 report renderer; fetched from this repo's main branch at run time
 LICENSE               # MIT
 ```
 
