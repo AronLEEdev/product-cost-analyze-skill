@@ -173,7 +173,7 @@ SKILL.md              # the procedure Claude follows (4 phases)
 calc.mjs              # Phase 3 helper: products.json + fob.json -> results.js (calls the API)
 calc.test.mjs         # node:test unit tests for calc.mjs
 report-template.html  # static report; reads results.js (window.__FBA_DATA__)
-docs/specs, docs/plans# design + implementation history
+LICENSE               # MIT
 ```
 
 ## Notes & limits

@@ -1,2 +1,5 @@
 .DS_Store
 node_modules/
+
+# Internal design history — not needed to use the skill
+docs/
