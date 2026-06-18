@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FBA Research Report</title>
+<script src="results.js"></script>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f7; color: #1d1d1f; }
+
+.header { background: #1d1d1f; color: white; padding: 28px 36px; }
+.header h1 { font-size: 26px; font-weight: 700; }
+.header h1 span { color: #ff9f0a; }
+.header .sub { color: #aeaeb2; font-size: 13px; margin-top: 5px; }
+
+.summary-bar { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; background: #d2d2d7; border-bottom: 1px solid #d2d2d7; }
+.stat { background: white; padding: 18px 24px; }
+.stat .label { font-size: 10px; color: #6e6e73; text-transform: uppercase; letter-spacing: .05em; }
+.stat .value { font-size: 24px; font-weight: 600; margin-top: 4px; }
+.stat .hint { font-size: 11px; color: #6e6e73; margin-top: 2px; }
+
+.insight { margin: 24px 36px 0; background: #fff8e6; border: 1px solid #ffe066; border-radius: 10px; padding: 14px 18px; font-size: 13px; color: #7d5c00; }
+
+.section { padding: 28px 36px; }
+.sec-title { font-size: 17px; font-weight: 600; margin-bottom: 18px; display: flex; align-items: center; gap: 10px; }
+.pill { font-size: 11px; padding: 2px 9px; border-radius: 10px; font-weight: 500; }
+.pill-green { background: #34c759; color: white; }
+.pill-red   { background: #ff3b30; color: white; }
+
+.card { background: white; border-radius: 14px; padding: 22px; margin-bottom: 14px; box-shadow: 0 1px 3px rgba(0,0,0,.07); border: 1px solid #e5e5ea; position: relative; overflow: hidden; }
+.card.rec { border-color: #34c759; border-width: 2px; }
+.card.elim { opacity: .7; }
+.rank { position: absolute; top: 0; right: 0; color: white; font-size: 12px; font-weight: 700; padding: 5px 13px; border-bottom-left-radius: 11px; }
+.rank-1 { background: #ff9f0a; }
+.rank-2 { background: #636366; }
+.rank-3 { background: #8e8e93; }
+
+.card-top { display: flex; gap: 18px; align-items: flex-start; }
+.card-img { width: 90px; height: 90px; object-fit: contain; border-radius: 8px; background: #f5f5f7; flex-shrink: 0; border: 1px solid #e5e5ea; }
+.card-info { flex: 1; }
+.card-title { font-size: 14px; font-weight: 600; line-height: 1.4; }
+.card-title a { color: #0071e3; text-decoration: none; }
+.card-title a:hover { text-decoration: underline; }
+.tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.tag { font-size: 11px; padding: 2px 8px; border-radius: 6px; background: #f5f5f7; color: #3a3a3c; }
+.tag-brand { background: #fef0cd; color: #7d5c00; }
+.tag-generic { background: #dff4e4; color: #1a6b30; }
+.tag-fob { background: #e8f4fd; color: #004d8c; }
+.tag-est { background: #f5f0ff; color: #5a2d8a; }
+.tag-warn { background: #fff0f0; color: #a8071a; }
+
+.metrics { display: grid; grid-template-columns: repeat(4,1fr); gap: 10px; margin-top: 18px; }
+.metric { background: #f5f5f7; border-radius: 10px; padding: 12px 14px; }
+.metric .ml { font-size: 10px; color: #6e6e73; text-transform: uppercase; letter-spacing: .05em; }
+.metric .mv { font-size: 19px; font-weight: 600; margin-top: 4px; }
+.metric .ms { font-size: 11px; color: #6e6e73; margin-top: 2px; }
+.green .mv { color: #34c759; }
+.orange .mv { color: #ff9f0a; }
+.red .mv { color: #ff3b30; }
+.blue .mv { color: #0071e3; }
+
+.breakdown { width: 100%; border-collapse: collapse; margin-top: 14px; font-size: 12px; }
+.breakdown th { background: #f5f5f7; padding: 7px 10px; text-align: left; font-weight: 600; font-size: 10px; color: #6e6e73; text-transform: uppercase; letter-spacing: .05em; border-bottom: 1px solid #e5e5ea; }
+.breakdown td { padding: 7px 10px; border-bottom: 1px solid #f5f5f7; }
+.breakdown tr.total td { font-weight: 700; background: #f5f5f7; border-bottom: none; }
+.dr { text-align: right; }
+
+.elim-msg { background: #fff2f0; border: 1px solid #ffccc7; border-radius: 8px; padding: 9px 13px; margin-top: 14px; font-size: 12px; color: #a8071a; }
+.warn-msg  { background: #fff8e6; border: 1px solid #ffe066; border-radius: 8px; padding: 9px 13px; margin-top: 14px; font-size: 12px; color: #7d5c00; }
+
+.links { display: flex; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
+.link-btn { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 600; padding: 4px 10px; border-radius: 6px; text-decoration: none; border: 1px solid; }
+.link-amz  { color: #c45500; border-color: #f5a623; background: #fff8f0; }
+.link-amz:hover  { background: #fef0dc; }
+.link-1688 { color: #c0392b; border-color: #e74c3c; background: #fff5f5; }
+.link-1688:hover { background: #ffe8e6; }
+.link-none { color: #aeaeb2; border-color: #d2d2d7; background: #f5f5f7; cursor: default; }
+
+.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.mini-metrics { display: grid; grid-template-columns: repeat(2,1fr); gap: 8px; margin-top: 12px; }
+
+.footer { padding: 22px 36px; border-top: 1px solid #e5e5ea; background: white; font-size: 11px; color: #6e6e73; line-height: 1.7; }
+</style>
+</head>
+<body>
+
+<div id="app">
+  <p style="padding:40px;color:#6e6e73;font-size:14px;">Loading results.js… Make sure report.html and results.js are in the same folder.</p>
+</div>
+
+<script>
+(function () {
+  const D = window.__FBA_DATA__;
+  if (!D) return; // message above stays visible
+
+  const $ = s => document.querySelector(s);
+  const fmtUsd = v => v < 0 ? '-$' + Math.abs(v).toFixed(2) : '$' + v.toFixed(2);
+  const fmtPct = v => (v * 100).toFixed(1) + '%';
+  const fmtK   = v => v >= 1000 ? '$' + (v/1000).toFixed(1) + 'K' : '$' + v.toFixed(0);
+  const esc    = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+  const a = D.assumptions;
+  const bestMargin = D.survivors.length ? D.survivors[0] : null;
+  const bestMonthly = D.survivors.length ? [...D.survivors].sort((x,y)=>y.monthlyNetAfterPPC-x.monthlyNetAfterPPC)[0] : null;
+
+  function tagBrand(p) {
+    if (p.brand === 'Generic') return `<span class="tag tag-generic">Generic</span>`;
+    if (p.note && p.note.includes('Branded')) return `<span class="tag tag-brand">Branded (Market Ref)</span>`;
+    return `<span class="tag tag-generic">Small Brand</span>`;
+  }
+  function tagFob(p) {
+    if (p.fobSource === 'taobao') return `<span class="tag tag-warn">Taobao Retail FOB</span>`;
+    if (p.candidates > 0) return `<span class="tag tag-fob">1688 Wholesale · ${p.candidates} matches</span>`;
+    return `<span class="tag tag-est">FOB Estimated</span>`;
+  }
+  function linkButtons(p) {
+    const amz = p.amazonUrl
+      ? `<a class="link-btn link-amz" href="${esc(p.amazonUrl)}" target="_blank">🛒 Amazon</a>`
+      : `<span class="link-btn link-none">🛒 Amazon N/A</span>`;
+    const s = p.sellerUrl || p.fobSellerUrl || '';
+    const label1688 = p.fobSource === 'taobao' ? '🏪 Taobao' : '🏭 1688';
+    const fob1688 = s
+      ? `<a class="link-btn link-1688" href="${esc(s)}" target="_blank">${label1688}</a>`
+      : `<span class="link-btn link-none">${label1688} ${p.fobSource === 'estimated' ? '(est. — no link)' : '(link unavailable)'}</span>`;
+    return `<div class="links">${amz}${fob1688}</div>`;
+  }
+  function marginColor(m) {
+    if (m >= 20) return 'green';
+    if (m >= 12) return 'orange';
+    return 'red';
+  }
+
+  function breakdownRows(p) {
+    return `
+      <tr><td>FOB${p.packCount>1?' (× '+p.packCount+' pack)':''}</td><td class="dr">${fmtUsd(p.fobUsdPerListing)}</td><td class="dr">${(p.fobUsdPerListing/p.price*100).toFixed(1)}%</td></tr>
+      <tr><td>Head-shipping</td><td class="dr">${fmtUsd(p.headShip)}</td><td class="dr">${(p.headShip/p.price*100).toFixed(1)}%</td></tr>
+      <tr><td>Duty</td><td class="dr">${fmtUsd(p.duty)}</td><td class="dr">${(p.duty/p.price*100).toFixed(1)}%</td></tr>
+      <tr><td>FBA Inbound (single)</td><td class="dr">${fmtUsd(p.inboundFee)}</td><td class="dr">${(p.inboundFee/p.price*100).toFixed(1)}%</td></tr>
+      <tr><td>FBA Fulfillment (${p.tier}, ${p.shipWeight}lb)</td><td class="dr">${fmtUsd(p.fulfillmentFee)}</td><td class="dr">${(p.fulfillmentFee/p.price*100).toFixed(1)}%</td></tr>
+      <tr><td>Referral Fee (${(a.referralPct*100).toFixed(0)}%)</td><td class="dr">${fmtUsd(p.referralFee)}</td><td class="dr">${(p.referralFee/p.price*100).toFixed(1)}%</td></tr>
+      <tr><td>Storage Fee</td><td class="dr">${fmtUsd(p.storageFee)}</td><td class="dr">${(p.storageFee/p.price*100).toFixed(1)}%</td></tr>
+      <tr class="total"><td><strong>Total Cost</strong></td><td class="dr"><strong>${fmtUsd(p.totalCost)}</strong></td><td class="dr"><strong>${(p.totalCost/p.price*100).toFixed(1)}%</strong></td></tr>`;
+  }
+
+  function fullCard(p, i) {
+    const mc = marginColor(p.netMarginAfterPPC);
+    const rankLabel = p.badge ? ['','⭐ #1 RECOMMENDED','🥈 #2 RECOMMENDED','🥉 #3 RECOMMENDED'][p.badge] : '';
+    const rankClass = p.badge ? `rank rank-${p.badge}` : '';
+    const warn = p.netMarginAfterPPC < 5 && p.netProfitAfterPPC > 0
+      ? `<div class="warn-msg">⚠️ Marginal — only ${p.netMarginAfterPPC.toFixed(1)}% net margin after PPC. Consider raising price or sourcing cheaper.</div>`
+      : '';
+    return `
+    <div class="card${p.recommended ? ' rec' : ''}">
+      ${rankClass ? `<div class="${rankClass}">${esc(rankLabel)}</div>` : ''}
+      <div class="card-top">
+        <img class="card-img" src="${esc(p.imageUrl)}" alt="">
+        <div class="card-info">
+          <div class="card-title"><a href="${esc(p.amazonUrl)}" target="_blank">${esc(p.title)}</a></div>
+          <div class="tags">
+            <span class="tag">ASIN: ${esc(p.asin)}</span>
+            ${tagBrand(p)} ${tagFob(p)}
+            <span class="tag">${p.rating ? p.rating+'★' : ''} ${p.reviews ? (typeof p.reviews === 'number' ? (p.reviews/1000).toFixed(1)+'K' : p.reviews)+' reviews' : ''}</span>
+          </div>
+          <div class="tags">
+            <span class="tag">Price: $${p.price.toFixed(2)}</span>
+            ${(p.packCount > 1) ? `<span class="tag">📦 ${p.packCount}-pack</span>` : ''}
+            <span class="tag">${(p.cnPack > 1 || p.packCount > 1)
+              ? `FOB ¥${p.fobRmb}${p.cnPack > 1 ? ' ÷ '+p.cnPack+'pcs' : ''} = $${p.fobUsd.toFixed(2)}/unit × ${p.packCount||1}-pack = $${(p.fobUsdPerListing ?? p.fobUsd*(p.packCount||1)).toFixed(2)}/listing`
+              : `FOB: ¥${p.fobRmb} ($${p.fobUsd.toFixed(2)})`}</span>
+            <span class="tag">~${p.monthlyVolume.toLocaleString()} units/mo${p.volumeSource==='badge'?' (badge est)':''}</span>
+          </div>
+          ${linkButtons(p)}
+        </div>
+      </div>
+      <div class="metrics">
+        <div class="metric ${mc}"><div class="ml">Net after PPC + returns</div><div class="mv">${p.netMarginAfterPPC.toFixed(1)}%</div><div class="ms">${fmtUsd(p.netProfitAfterPPC)}/unit</div></div>
+        <div class="metric ${mc}"><div class="ml">Monthly Net Profit</div><div class="mv">${fmtK(p.monthlyNetAfterPPC)}</div><div class="ms">at ${p.monthlyVolume.toLocaleString()} units</div></div>
+        <div class="metric blue"><div class="ml">Gross Margin</div><div class="mv">${p.grossMargin.toFixed(1)}%</div><div class="ms">${fmtUsd(p.grossProfit)}/unit</div></div>
+        <div class="metric orange"><div class="ml">Monthly Revenue</div><div class="mv">${fmtK(p.monthlyVolume * p.price)}</div><div class="ms">Gross: ${fmtK(p.monthlyVolume * p.grossProfit)}</div></div>
+      </div>
+      <table class="breakdown">
+        <thead><tr><th>Cost Component</th><th class="dr">Per Unit</th><th class="dr">% of Price</th></tr></thead>
+        <tbody>${breakdownRows(p)}</tbody>
+      </table>
+      ${warn}
+    </div>`;
+  }
+
+  function miniCard(p) {
+    const mc = marginColor(p.netMarginAfterPPC);
+    return `
+    <div class="card">
+      <div class="card-top">
+        <img class="card-img" src="${esc(p.imageUrl)}" alt="" style="width:70px;height:70px;">
+        <div class="card-info">
+          <div class="card-title" style="font-size:13px;"><a href="${esc(p.amazonUrl)}" target="_blank">${esc(p.title)}</a></div>
+          <div class="tags">${tagBrand(p)}<span class="tag">$${p.price.toFixed(2)} · ~${p.monthlyVolume.toLocaleString()}/mo</span></div>
+          ${linkButtons(p)}
+        </div>
+      </div>
+      <div class="mini-metrics">
+        <div class="metric ${mc}"><div class="ml">Net Margin</div><div class="mv" style="font-size:16px;">${p.netMarginAfterPPC.toFixed(1)}%</div><div class="ms">${fmtUsd(p.netProfitAfterPPC)}/unit</div></div>
+        <div class="metric blue"><div class="ml">Monthly Net</div><div class="mv" style="font-size:16px;">${fmtK(p.monthlyNetAfterPPC)}</div><div class="ms">Gross: ${fmtUsd(p.grossProfit)}/unit</div></div>
+      </div>
+    </div>`;
+  }
+
+  // Separate top 3 full cards from rest
+  const top3 = D.survivors.slice(0, 3);
+  const rest  = D.survivors.slice(3);
+
+  let html = `
+  <div class="header">
+    <h1>FBA Product Research: <span>${esc(D.keyword)}</span></h1>
+    <div class="sub">Generated ${esc(D.date)} · US Marketplace · FBA 2026 · ACoS ${(a.ppcAcos*100).toFixed(0)}% · ${a.storageSeason === 'octDec' ? 'Oct–Dec' : 'Jan–Sep'} Storage · ¥${a.exchangeRate}/$1</div>
+  </div>
+
+  <div class="summary-bar">
+    <div class="stat"><div class="label">Products Analyzed</div><div class="value">${D.survivors.length + D.eliminated.length}</div><div class="hint">$${D.assumptions.priceMin||10}–$${D.assumptions.priceMax||50} price band</div></div>
+    <div class="stat"><div class="label">Profitable Survivors</div><div class="value">${D.survivors.length}</div><div class="hint">${D.eliminated.length} eliminated · ${D.retried ? 'page-2 retry ran' : 'no retry needed'}</div></div>
+    <div class="stat"><div class="label">Best Net Margin</div><div class="value" style="color:#34c759">${bestMargin ? bestMargin.netMarginAfterPPC.toFixed(1)+'%' : '—'}</div><div class="hint">${bestMargin ? esc(bestMargin.title.split(' ').slice(0,4).join(' '))+'…' : ''}</div></div>
+    <div class="stat"><div class="label">Best Monthly Net</div><div class="value" style="color:#0071e3">${bestMonthly ? fmtK(bestMonthly.monthlyNetAfterPPC) : '—'}</div><div class="hint">${bestMonthly ? bestMonthly.monthlyVolume.toLocaleString()+' units/mo' : ''}</div></div>
+  </div>`;
+
+  if (D.marketInsight) {
+    html += `<div class="insight"><strong>Market Insight:</strong> ${esc(D.marketInsight)}</div>`;
+  }
+
+  // Survivors
+  html += `<div class="section"><div class="sec-title"><span>Profitable Products</span><span class="pill pill-green">${D.survivors.length} survivors</span></div>`;
+  top3.forEach(p => { html += fullCard(p); });
+
+  if (rest.length) {
+    html += `<div class="two-col">`;
+    rest.forEach(p => { html += miniCard(p); });
+    html += `</div>`;
+  }
+
+  // Eliminated
+  if (D.eliminated.length) {
+    html += `<div class="sec-title" style="margin-top:24px;"><span>Eliminated</span><span class="pill pill-red">${D.eliminated.length} product${D.eliminated.length>1?'s':''}</span></div>`;
+    D.eliminated.forEach(p => {
+      html += `
+      <div class="card elim">
+        <div class="card-top">
+          <img class="card-img" src="${esc(p.imageUrl)}" alt="" style="width:70px;height:70px;">
+          <div class="card-info">
+            <div class="card-title" style="font-size:13px;"><a href="${esc(p.amazonUrl)}" target="_blank">${esc(p.title)}</a></div>
+            <div class="tags">${tagBrand(p)}<span class="tag">$${p.price.toFixed(2)} · ~${p.monthlyVolume.toLocaleString()}/mo</span></div>
+          </div>
+        </div>
+        <div class="elim-msg">❌ Net profit after PPC: <strong>${fmtUsd(p.netProfitAfterPPC)}/unit (${p.netMarginAfterPPC.toFixed(1)}%)</strong>. Price too low to absorb FBA + PPC.</div>
+      </div>`;
+    });
+  }
+
+  html += `</div>`; // end .section
+
+  if (D.retried) {
+    html += `<div style="padding:0 36px 20px;font-size:12px;color:#6e6e73;">Initial batch surfaced ${D.initialSurvivors||'?'} profitable products; page-2 retry added ${D.retrySurvivors||'?'} more.</div>`;
+  }
+
+  // Footer
+  html += `
+  <div class="footer">
+    <strong>Assumptions:</strong> FOB rate ¥${a.exchangeRate}/$1 · Duty ${(a.dutyRate*100).toFixed(0)}% · Head-ship $${(a.headShipPerUnit ?? 0.30).toFixed(2)}/unit · Inbound: ${a.inboundOption || 'single'} · ${a.storageSeason==='octDec'?'Oct–Dec':'Jan–Sep'} storage · ACoS ${(a.ppcAcos*100).toFixed(0)}% · Return rate ${(a.returnRate*100).toFixed(0)}% · Referral ${(a.referralPct*100).toFixed(0)}% · FBA 2026 + 3.5% fuel surcharge.<br>
+    <strong>Volume source:</strong> ${D.survivors.some(p=>p.volumeSource==='helium10') ? 'Helium 10 (30-day)' : 'Amazon "bought in past month" badge estimates — upgrade to Helium 10 paid for precise data.'}
+    ${D.survivors.some(p=>p.dimsSource==='estimated') ? '<br><strong>Dimensions:</strong> Some products used estimated dimensions — verify before committing inventory.' : ''}
+  </div>`;
+
+  document.getElementById('app').innerHTML = html;
+})();
+</script>
+</body>
+</html>
