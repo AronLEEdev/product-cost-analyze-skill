@@ -118,8 +118,9 @@ export async function callApi(payload, fetchImpl = fetch) {
     throw new Error(`HTTP ${res.status}: ${body.slice(0, 200)}`);
   }
   const json = await res.json();
-  if (!json.outputs) throw new Error("missing outputs in response");
-  return json.outputs;
+  const out = json.result || json.outputs; // v1 wraps in `result`; `outputs` kept for back-compat
+  if (!out) throw new Error("missing result in response");
+  return out;
 }
 
 export async function main(runDir, keyword, opts = {}) {

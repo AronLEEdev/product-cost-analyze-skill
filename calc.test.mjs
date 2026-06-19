@@ -115,7 +115,7 @@ test("callApi POSTs JSON (no auth) and returns outputs", async () => {
   let seen;
   const fakeFetch = async (url, opts) => {
     seen = { url, opts };
-    return { ok: true, status: 200, json: async () => ({ outputs: { netProfitAfterPPC: 1 } }) };
+    return { ok: true, status: 200, json: async () => ({ result: { netProfitAfterPPC: 1 } }) };
   };
   const out = await callApi({ price: 1 }, fakeFetch);
   assert.equal(out.netProfitAfterPPC, 1);
@@ -131,7 +131,7 @@ test("callApi throws on non-200", async () => {
 
 test("callApi throws when outputs missing", async () => {
   const fakeFetch = async () => ({ ok: true, status: 200, json: async () => ({}) });
-  await assert.rejects(() => callApi({}, fakeFetch), /missing outputs/);
+  await assert.rejects(() => callApi({}, fakeFetch), /missing result/);
 });
 
 // calc.test.mjs  (append)
@@ -158,7 +158,7 @@ test("main hard-stops with no results.js when any product fails", async () => {
   const fakeFetch = async (_u, opts) => {
     const body = JSON.parse(opts.body);
     if (body.price === 22.0) return { ok: false, status: 500, text: async () => "boom" };
-    return { ok: true, status: 200, json: async () => ({ outputs: stubOut(8) }) };
+    return { ok: true, status: 200, json: async () => ({ result: stubOut(8) }) };
   };
   await assert.rejects(() => main(dir, "kw", { fetchImpl: fakeFetch }), /Calc failed/);
   await assert.rejects(() => rf(pjoin(dir, "results.js")), /ENOENT/);
@@ -170,7 +170,7 @@ test("main writes results.js with survivors on happy path", async () => {
   const fakeFetch = async (_u, opts) => {
     const body = JSON.parse(opts.body);
     // B1 profitable, B2 unprofitable
-    return { ok: true, status: 200, json: async () => ({ outputs: body.price === 22.0 ? stubOut(-2) : stubOut(6) }) };
+    return { ok: true, status: 200, json: async () => ({ result: body.price === 22.0 ? stubOut(-2) : stubOut(6) }) };
   };
   const data = await main(dir, "storage basket", { fetchImpl: fakeFetch });
   const written = await rf(pjoin(dir, "results.js"), "utf8");

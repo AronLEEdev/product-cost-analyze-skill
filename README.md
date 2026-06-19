@@ -107,7 +107,7 @@ All money is USD, dimensions are US inches, weight is pounds. Rates are decimals
 
 ### Response
 
-`200 OK` → `{ "outputs": CalcOutputs }`. Margins are decimals (`0.29` = 29%).
+`200 OK` → `{ "result": CalcOutputs }`. Margins are decimals (`0.29` = 29%).
 
 | Field | Meaning |
 |---|---|
@@ -151,7 +151,7 @@ curl -s -X POST https://profitlee.com/api/v1/calculate \
 
 ```json
 {
-  "outputs": {
+  "result": {
     "platform": "amazon", "region": "us", "mode": "fba",
     "dimWeight": 2.0959, "shipWeight": 2.0959, "sizeTier": "Large Standard", "cubicFeet": 0.1686,
     "landedCogs": 1.24, "inboundFee": 0, "fulfillmentFee": 6.1272, "referralFee": 3.2985,

@@ -98,7 +98,7 @@ https://www.amazon.com/s?k=<keyword>&rh=p_36%3A1000-5000&language=en_US
 ```js
 (function(){
   function vol(t){ if(!t) return 100; const m=t.match(/([\d.]+)K\+/i); if(m) return Math.round(parseFloat(m[1])*1000); const n=t.match(/(\d+)\+/); return n?parseInt(n[1]):100; }
-  function pk(t){ const m=(t.match(/(\d+)\s*-?\s*pack/i)||t.match(/pack of\s*(\d+)/i)||t.match(/set of\s*(\d+)/i)||t.match(/(\d+)\s*(?:pcs|pc|pieces|count)\b/i)); return m?parseInt(m[1],10):1; }
+  function pk(t){ const m=(t.match(/(\d+)\s*-?\s*pack/i)||t.match(/pack of\s*(\d+)/i)||t.match(/set of\s*(\d+)/i)||t.match(/(\d+)\s*-?\s*pk\b/i)||t.match(/(\d+)\s*(?:pcs|pc|pieces|count)\b/i)||t.match(/(\d+)\s*each\b/i)); return m?parseInt(m[1],10):1; }
   const seen=new Set();
   return JSON.stringify(
     Array.from(document.querySelectorAll('.s-result-item[data-asin]:not([data-asin=""])')).slice(0,25).map(el=>{
@@ -510,8 +510,9 @@ export async function callApi(payload, fetchImpl = fetch) {
     throw new Error(`HTTP ${res.status}: ${body.slice(0, 200)}`);
   }
   const json = await res.json();
-  if (!json.outputs) throw new Error("missing outputs in response");
-  return json.outputs;
+  const out = json.result || json.outputs; // v1 wraps in `result`; `outputs` kept for back-compat
+  if (!out) throw new Error("missing result in response");
+  return out;
 }
 
 export async function main(runDir, keyword, opts = {}) {
