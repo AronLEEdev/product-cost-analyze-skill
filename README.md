@@ -26,7 +26,7 @@ See the table in [`SKILL.md`](./SKILL.md#preconditions--setup-read-once). In sho
 |---|---|
 | Chrome + the Claude-in-Chrome MCP extension (connected) | ✅ |
 | **1688.com** account, logged in | ✅ |
-| **Profitlee** API token (see below) | ✅ |
+| Internet access to **Profitlee's public calc API** (no token) | ✅ |
 | Node.js ≥ 18 · Python 3 (or any static server) | ✅ |
 | Amazon — logged-in Chrome profile | recommended |
 | Helium 10 extension | optional |
@@ -39,14 +39,12 @@ Phase 3 helper (`calc.mjs`, embedded in `SKILL.md`) into the run dir and fetches
 the Phase 4 report template from this repo, so the two runtime assets appear on
 demand.
 
+No API key or account is needed — Phase 3 uses **Profitlee's public calc API**.
+Just make sure the runtimes are present:
+
 ```bash
 # Node ≥ 18 and Python 3 must be on PATH (the Phase 3 helper needs Node's built-in fetch)
 node --version && python3 --version
-
-# Store the Profitlee API token once, in ~/.claude/settings.json:
-#   { "env": { "PROFITLEE_API_TOKEN": "<your token>" } }
-# Verify it's visible (never print the value):
-node -e "console.log(process.env.PROFITLEE_API_TOKEN ? 'PRESENT' : 'MISSING')"
 ```
 
 > **Maintainers:** `calc.mjs` + `calc.test.mjs` in this repo are the **tested
@@ -59,23 +57,24 @@ node -e "console.log(process.env.PROFITLEE_API_TOKEN ? 'PRESENT' : 'MISSING')"
 
 ## Profitlee Calc API
 
-Phase 3 sends each product to Profitlee's stateless calculation endpoint and
-uses the returned cost stack verbatim — the skill does **not** reimplement FBA
-fee math. The engine is the single source of truth (US / DE / JP marketplaces).
+Phase 3 sends each product to [Profitlee](https://profitlee.com)'s **public,
+no-auth** calculation endpoint and uses the returned cost stack verbatim — the
+skill does **not** reimplement FBA fee math. The engine is the single source of
+truth (US / DE / JP marketplaces).
 
-> 📖 **Canonical API reference:** <https://profitlee.com/docs/api> — the summary
-> below mirrors it; check the docs page for the authoritative, up-to-date schema.
+> 📖 **Profitlee API docs:** <https://profitlee.com/docs/api> — the authoritative,
+> up-to-date reference (free, country-accurate FBA/FBM fee calculations). The
+> summary below mirrors it.
 
 ### Endpoint
 
 ```
-POST https://profitlee.com/api/calculate
+POST https://profitlee.com/api/v1/calculate
 Content-Type: application/json
-Authorization: Bearer <PROFITLEE_API_TOKEN>
 ```
 
-The endpoint is stateless (no rate limit, no cap). Send the bearer token on every
-request; it is read from the `PROFITLEE_API_TOKEN` env var.
+The endpoint is **public and stateless** — no API key, no auth header, no rate
+limit, no cap.
 
 ### Request body (Amazon FBA mode)
 
@@ -138,9 +137,8 @@ All money is USD, dimensions are US inches, weight is pounds. Rates are decimals
 ### Example
 
 ```bash
-curl -s -X POST https://profitlee.com/api/calculate \
+curl -s -X POST https://profitlee.com/api/v1/calculate \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $PROFITLEE_API_TOKEN" \
   -d '{
     "mode":"fba","region":"us",
     "L":9.75,"W":7.2,"H":4.15,"weight":1.9,

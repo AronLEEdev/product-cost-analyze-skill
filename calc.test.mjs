@@ -111,26 +111,27 @@ test("selectAndRank does not badge sub-15 margins even with <3 badged", () => {
 // calc.test.mjs  (append)
 import { callApi } from "./calc.mjs";
 
-test("callApi sends Bearer token and returns outputs", async () => {
+test("callApi POSTs JSON (no auth) and returns outputs", async () => {
   let seen;
   const fakeFetch = async (url, opts) => {
     seen = { url, opts };
     return { ok: true, status: 200, json: async () => ({ outputs: { netProfitAfterPPC: 1 } }) };
   };
-  const out = await callApi({ price: 1 }, "tok_abc", fakeFetch);
+  const out = await callApi({ price: 1 }, fakeFetch);
   assert.equal(out.netProfitAfterPPC, 1);
-  assert.equal(seen.opts.headers.Authorization, "Bearer tok_abc");
   assert.equal(seen.opts.method, "POST");
+  assert.equal(seen.opts.headers["Content-Type"], "application/json");
+  assert.equal(seen.opts.headers.Authorization, undefined); // public endpoint, no auth
 });
 
 test("callApi throws on non-200", async () => {
-  const fakeFetch = async () => ({ ok: false, status: 401, text: async () => "unauthorized" });
-  await assert.rejects(() => callApi({}, "bad", fakeFetch), /HTTP 401/);
+  const fakeFetch = async () => ({ ok: false, status: 500, text: async () => "boom" });
+  await assert.rejects(() => callApi({}, fakeFetch), /HTTP 500/);
 });
 
 test("callApi throws when outputs missing", async () => {
   const fakeFetch = async () => ({ ok: true, status: 200, json: async () => ({}) });
-  await assert.rejects(() => callApi({}, "tok", fakeFetch), /missing outputs/);
+  await assert.rejects(() => callApi({}, fakeFetch), /missing outputs/);
 });
 
 // calc.test.mjs  (append)
@@ -152,13 +153,6 @@ async function makeRun() {
   return dir;
 }
 
-test("main throws when token missing (before any file read)", async () => {
-  await assert.rejects(
-    () => main("/nonexistent", "kw", { token: undefined, fetchImpl: async () => { throw new Error("should not fetch"); } }),
-    /PROFITLEE_API_TOKEN not set/
-  );
-});
-
 test("main hard-stops with no results.js when any product fails", async () => {
   const dir = await makeRun();
   const fakeFetch = async (_u, opts) => {
@@ -166,7 +160,7 @@ test("main hard-stops with no results.js when any product fails", async () => {
     if (body.price === 22.0) return { ok: false, status: 500, text: async () => "boom" };
     return { ok: true, status: 200, json: async () => ({ outputs: stubOut(8) }) };
   };
-  await assert.rejects(() => main(dir, "kw", { token: "t", fetchImpl: fakeFetch }), /Calc failed/);
+  await assert.rejects(() => main(dir, "kw", { fetchImpl: fakeFetch }), /Calc failed/);
   await assert.rejects(() => rf(pjoin(dir, "results.js")), /ENOENT/);
   await rm(dir, { recursive: true, force: true });
 });
@@ -178,7 +172,7 @@ test("main writes results.js with survivors on happy path", async () => {
     // B1 profitable, B2 unprofitable
     return { ok: true, status: 200, json: async () => ({ outputs: body.price === 22.0 ? stubOut(-2) : stubOut(6) }) };
   };
-  const data = await main(dir, "storage basket", { token: "t", fetchImpl: fakeFetch });
+  const data = await main(dir, "storage basket", { fetchImpl: fakeFetch });
   const written = await rf(pjoin(dir, "results.js"), "utf8");
   assert.ok(written.startsWith("window.__FBA_DATA__ = "));
   assert.equal(data.keyword, "storage basket");

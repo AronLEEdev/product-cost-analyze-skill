@@ -36,7 +36,7 @@ one browser profile. Log into Amazon and 1688 there **before** starting.
 |---|---|---|
 | Chrome + the **Claude-in-Chrome MCP** extension, connected | browser driver for the whole workflow | **Required** |
 | **1688.com account, logged in** (same Chrome profile) | Phase 2 batch image sourcing — submitting `帮我寻源` creates a real sourcing task on the account | **Required** |
-| **Profitlee API token** ([profitlee.com](https://profitlee.com)) in `~/.claude/settings.json` | Phase 3 FBA-fee calculation | **Required** |
+| Internet access to **Profitlee's public calc API** (no token — see [docs](https://profitlee.com/docs/api)) | Phase 3 FBA-fee calculation | **Required** |
 | **Node.js ≥ 18** | runs the Phase 3 `calc.mjs` helper (written to the run dir) — needs built-in `fetch` | **Required** |
 | **Python 3** (or any static file server) | serves the report over http (Phase 4) | **Required** |
 | **Amazon** — a logged-in Chrome profile | Phase 1 scraping (anonymous browsing works but trips bot-detection/CAPTCHA more often) | Recommended |
@@ -63,25 +63,11 @@ Tools used throughout:
 > **No automated login or CAPTCHA solving.** If a site shows a login wall or a
 > verification slider, stop and ask the user to resolve it, then continue.
 
-### Setup — Profitlee API token (one-time)
+### Profitlee calc API (public — no token)
 
-Phase 3 calls Profitlee's calc engine at `https://profitlee.com/api/calculate`.
-It authenticates with a bearer token read from `PROFITLEE_API_TOKEN`.
-
-Store the token once in `~/.claude/settings.json`:
-
-```json
-{ "env": { "PROFITLEE_API_TOKEN": "<your token>" } }
-```
-
-The harness injects it into every session. Verify presence (never print the value):
-
-```bash
-node -e "console.log(process.env.PROFITLEE_API_TOKEN ? 'PRESENT' : 'MISSING')"
-```
-
-If it shows `MISSING` right after adding it, restart the session — settings.json
-env is applied at session start.
+Phase 3 calls **Profitlee's public calc engine** at
+`https://profitlee.com/api/v1/calculate` — no API key, no auth, nothing to set
+up. Full API reference: <https://profitlee.com/docs/api>.
 
 ## Phase 1 — Keyword search on Amazon (Claude-in-Chrome MCP)
 
@@ -377,14 +363,14 @@ not share or commit it.
 ## Phase 3 — Calculate & write results.js
 
 The FBA math lives in Profitlee's tested calc engine, not in this skill. Phase 3
-sends each product to `POST https://profitlee.com/api/calculate` and writes
+sends each product to `POST https://profitlee.com/api/v1/calculate` (public, no auth) and writes
 `results.js` from the responses. Do **not** hand-roll fee tables here.
 
 ### 3.1 Preconditions
 
 - `<run-dir>/products.json` and `<run-dir>/fob.json` both exist and cover the
   same ASINs (Phase 2 completed with no hard-stop).
-- `PROFITLEE_API_TOKEN` is set (see Setup). Confirm with the presence-probe.
+- Internet access (Phase 3 POSTs to Profitlee's public calc API — no token).
 
 ### 3.2 Write and run the calc helper
 
@@ -409,7 +395,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
-const API_URL = "https://profitlee.com/api/calculate";
+const API_URL = "https://profitlee.com/api/v1/calculate";
 
 const CONSTANTS = {
   region: "us",
@@ -513,10 +499,10 @@ export function selectAndRank(mapped) {
   return { survivors, eliminated };
 }
 
-export async function callApi(payload, token, fetchImpl = fetch) {
+export async function callApi(payload, fetchImpl = fetch) {
   const res = await fetchImpl(API_URL, {
     method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
   if (!res.ok) {
@@ -530,10 +516,6 @@ export async function callApi(payload, token, fetchImpl = fetch) {
 
 export async function main(runDir, keyword, opts = {}) {
   const fetchImpl = opts.fetchImpl || fetch;
-  const token = "token" in opts ? opts.token : process.env.PROFITLEE_API_TOKEN;
-  if (!token) {
-    throw new Error("PROFITLEE_API_TOKEN not set. Add it to ~/.claude/settings.json env (see SKILL.md → Setup).");
-  }
 
   const products = JSON.parse(await readFile(join(runDir, "products.json"), "utf8"));
   const fob = JSON.parse(await readFile(join(runDir, "fob.json"), "utf8"));
@@ -543,7 +525,7 @@ export async function main(runDir, keyword, opts = {}) {
     products.map(async (p) => {
       const f = fobMap.get(p.asin);
       if (!f) throw new Error(`no fob.json entry`);
-      const outputs = await callApi(buildPayload(p, f), token, fetchImpl);
+      const outputs = await callApi(buildPayload(p, f), fetchImpl);
       return mapOutputs(p, f, outputs);
     })
   );
@@ -613,7 +595,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
 
 ### 3.3 Hard-stop on failure
 
-If any product's API call fails (missing token, non-200, validation error),
+If any product's API call fails (non-200, validation error, network),
 `calc.mjs` exits non-zero, prints the failing ASIN(s), and writes **no**
 `results.js`. Resolve the cause (e.g. set the token, retry transient network)
 and re-run — never edit `results.js` by hand.

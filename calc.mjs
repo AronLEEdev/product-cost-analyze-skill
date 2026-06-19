@@ -3,7 +3,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
-const API_URL = "https://profitlee.com/api/calculate";
+const API_URL = "https://profitlee.com/api/v1/calculate";
 
 const CONSTANTS = {
   region: "us",
@@ -107,10 +107,10 @@ export function selectAndRank(mapped) {
   return { survivors, eliminated };
 }
 
-export async function callApi(payload, token, fetchImpl = fetch) {
+export async function callApi(payload, fetchImpl = fetch) {
   const res = await fetchImpl(API_URL, {
     method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
   if (!res.ok) {
@@ -124,10 +124,6 @@ export async function callApi(payload, token, fetchImpl = fetch) {
 
 export async function main(runDir, keyword, opts = {}) {
   const fetchImpl = opts.fetchImpl || fetch;
-  const token = "token" in opts ? opts.token : process.env.PROFITLEE_API_TOKEN;
-  if (!token) {
-    throw new Error("PROFITLEE_API_TOKEN not set. Add it to ~/.claude/settings.json env (see SKILL.md → Setup).");
-  }
 
   const products = JSON.parse(await readFile(join(runDir, "products.json"), "utf8"));
   const fob = JSON.parse(await readFile(join(runDir, "fob.json"), "utf8"));
@@ -137,7 +133,7 @@ export async function main(runDir, keyword, opts = {}) {
     products.map(async (p) => {
       const f = fobMap.get(p.asin);
       if (!f) throw new Error(`no fob.json entry`);
-      const outputs = await callApi(buildPayload(p, f), token, fetchImpl);
+      const outputs = await callApi(buildPayload(p, f), fetchImpl);
       return mapOutputs(p, f, outputs);
     })
   );
