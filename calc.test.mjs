@@ -247,3 +247,100 @@ test("CLI guard fires when invoked directly (no args → usage + exit 1)", () =>
   assert.equal(r.status, 1);
   assert.match(r.stderr, /Usage: node calc\.mjs/);
 });
+
+// calc.test.mjs  (append) — profitlee-mcp transport: emit-payloads + outputs modes
+import { emitPayloads } from "./calc.mjs";
+
+test("emitPayloads writes payloads.json keyed by asin with buildPayload args", async () => {
+  const dir = await makeRun();
+  const payloads = await emitPayloads(dir);
+  assert.equal(payloads.length, 2);
+  const written = JSON.parse(await rf(pjoin(dir, "payloads.json"), "utf8"));
+  assert.deepEqual(written.map((e) => e.asin), ["B1", "B2"]);
+  const b1 = written.find((e) => e.asin === "B1").payload;
+  assert.equal(b1.mode, "fba");
+  assert.equal(b1.inboundOption, "single");
+  assert.equal(b1.duty, 0);
+  assert.ok(Math.abs(b1.fob - 0.69) < 1e-6);       // fobUsd × packCount(1)
+  assert.ok(Math.abs(b1.headShip - 0.30) < 1e-6);  // 0.30 × packCount(1)
+  await rm(dir, { recursive: true, force: true });
+});
+
+test("emitPayloads scales fob and headShip by packCount", async () => {
+  const dir = await mkdtemp(pjoin(tmpdir(), "fba-"));
+  await wf(pjoin(dir, "products.json"), JSON.stringify([
+    { asin: "P4", title: "T", amazonUrl: "u", imageUrl: "i", price: 45.99, monthlyVolume: 100, volumeSource: "badge", dim: { L: 9, W: 3, H: 3 }, weight: 1, packCount: 4 },
+  ]));
+  await wf(pjoin(dir, "fob.json"), JSON.stringify([{ asin: "P4", fobRmb: 13.5, fobUsd: 1.88, source: "1688", sellerUrl: "s" }]));
+  const [{ payload }] = await emitPayloads(dir);
+  assert.ok(Math.abs(payload.fob - 7.52) < 1e-6);      // 1.88 × 4
+  assert.ok(Math.abs(payload.headShip - 1.20) < 1e-6); // 0.30 × 4
+  await rm(dir, { recursive: true, force: true });
+});
+
+test("emitPayloads throws when a product has no fob entry", async () => {
+  const dir = await mkdtemp(pjoin(tmpdir(), "fba-"));
+  await wf(pjoin(dir, "products.json"), JSON.stringify([
+    { asin: "B9", title: "T", amazonUrl: "u", imageUrl: "i", price: 21.99, monthlyVolume: 100, volumeSource: "badge", dim: { L: 9, W: 3, H: 3 }, weight: 1 },
+  ]));
+  await wf(pjoin(dir, "fob.json"), JSON.stringify([]));
+  await assert.rejects(() => emitPayloads(dir), /no fob\.json entry for B9/);
+  await rm(dir, { recursive: true, force: true });
+});
+
+test("main with outputsByAsin maps + ranks without any network", async () => {
+  const dir = await makeRun();
+  const throwFetch = async () => { throw new Error("network called"); };
+  const data = await main(dir, "storage basket", {
+    fetchImpl: throwFetch,
+    outputsByAsin: { B1: stubOut(6), B2: stubOut(-2) },
+  });
+  const written = await rf(pjoin(dir, "results.js"), "utf8");
+  assert.ok(written.startsWith("window.__FBA_DATA__ = "));
+  assert.equal(data.survivors.length, 1);
+  assert.equal(data.survivors[0].asin, "B1");
+  assert.equal(data.eliminated.length, 1);
+  await rm(dir, { recursive: true, force: true });
+});
+
+test("main unwraps a {result: ...} envelope in outputsByAsin (MCP shape)", async () => {
+  const dir = await makeRun();
+  const data = await main(dir, "kw", {
+    fetchImpl: async () => { throw new Error("network called"); },
+    outputsByAsin: { B1: { result: stubOut(6) }, B2: { result: stubOut(-2) } },
+  });
+  assert.equal(data.survivors.length, 1);
+  assert.equal(data.survivors[0].asin, "B1");
+  await rm(dir, { recursive: true, force: true });
+});
+
+test("main hard-stops (no results.js) when outputsByAsin misses an asin", async () => {
+  const dir = await makeRun();
+  await assert.rejects(
+    () => main(dir, "kw", { outputsByAsin: { B1: stubOut(6) } }),
+    /Calc failed/
+  );
+  await assert.rejects(() => rf(pjoin(dir, "results.js")), /ENOENT/);
+  await rm(dir, { recursive: true, force: true });
+});
+
+test("CLI --outputs reads a file and writes results.js (exit 0)", async () => {
+  const here = dirname(fileURLToPath(import.meta.url));
+  const dir = await makeRun();
+  await wf(pjoin(dir, "outputs.json"), JSON.stringify({ B1: stubOut(6), B2: stubOut(-2) }));
+  const r = spawnSync(process.execPath, [joinPath(here, "calc.mjs"), dir, "kw", "--outputs", "outputs.json"], { encoding: "utf8" });
+  assert.equal(r.status, 0);
+  const written = await rf(pjoin(dir, "results.js"), "utf8");
+  assert.ok(written.startsWith("window.__FBA_DATA__ = "));
+  await rm(dir, { recursive: true, force: true });
+});
+
+test("CLI --emit-payloads writes payloads.json (exit 0)", async () => {
+  const here = dirname(fileURLToPath(import.meta.url));
+  const dir = await makeRun();
+  const r = spawnSync(process.execPath, [joinPath(here, "calc.mjs"), dir, "kw", "--emit-payloads"], { encoding: "utf8" });
+  assert.equal(r.status, 0);
+  const written = JSON.parse(await rf(pjoin(dir, "payloads.json"), "utf8"));
+  assert.equal(written.length, 2);
+  await rm(dir, { recursive: true, force: true });
+});

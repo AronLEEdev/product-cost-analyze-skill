@@ -1,6 +1,6 @@
 // calc.mjs
 import { readFile, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join, isAbsolute } from "node:path";
 import { pathToFileURL } from "node:url";
 
 const API_URL = "https://profitlee.com/api/v1/calculate";
@@ -123,6 +123,19 @@ export async function callApi(payload, fetchImpl = fetch) {
   return out;
 }
 
+export async function emitPayloads(runDir) {
+  const products = JSON.parse(await readFile(join(runDir, "products.json"), "utf8"));
+  const fob = JSON.parse(await readFile(join(runDir, "fob.json"), "utf8"));
+  const fobMap = new Map(fob.map((f) => [f.asin, f]));
+  const payloads = products.map((p) => {
+    const f = fobMap.get(p.asin);
+    if (!f) throw new Error(`no fob.json entry for ${p.asin}`);
+    return { asin: p.asin, payload: buildPayload(p, f) };
+  });
+  await writeFile(join(runDir, "payloads.json"), JSON.stringify(payloads, null, 2));
+  return payloads;
+}
+
 export async function main(runDir, keyword, opts = {}) {
   const fetchImpl = opts.fetchImpl || fetch;
 
@@ -134,7 +147,14 @@ export async function main(runDir, keyword, opts = {}) {
     products.map(async (p) => {
       const f = fobMap.get(p.asin);
       if (!f) throw new Error(`no fob.json entry`);
-      const outputs = await callApi(buildPayload(p, f), fetchImpl);
+      let outputs;
+      if (opts.outputsByAsin) {
+        const raw = opts.outputsByAsin[p.asin];
+        if (!raw) throw new Error(`no outputs for ${p.asin}`);
+        outputs = raw.result || raw; // tolerate {result: CalcOutputs} (MCP) or a raw CalcOutputs
+      } else {
+        outputs = await callApi(buildPayload(p, f), fetchImpl);
+      }
       return mapOutputs(p, f, outputs);
     })
   );
@@ -188,15 +208,32 @@ export async function main(runDir, keyword, opts = {}) {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const [runDir, keyword] = process.argv.slice(2);
+  const argv = process.argv.slice(2);
+  const runDir = argv[0];
+  const keyword = argv[1];
+  const emitFlag = argv.includes("--emit-payloads");
+  const outIdx = argv.indexOf("--outputs");
+  const outputsFile = outIdx >= 0 ? argv[outIdx + 1] : null;
   if (!runDir || !keyword) {
-    console.error('Usage: node calc.mjs <run-dir> "<keyword>"');
+    console.error('Usage: node calc.mjs <run-dir> "<keyword>" [--emit-payloads | --outputs <file>]');
     process.exit(1);
   }
-  main(runDir, keyword)
-    .then((d) => console.log(`Wrote results.js — ${d.survivors.length} survivors, ${d.eliminated.length} eliminated.`))
-    .catch((e) => {
-      console.error(e.message);
-      process.exit(1);
-    });
+  const run = async () => {
+    if (emitFlag) {
+      const payloads = await emitPayloads(runDir);
+      console.log(`Wrote payloads.json — ${payloads.length} products.`);
+      return;
+    }
+    let opts = {};
+    if (outputsFile) {
+      const path = isAbsolute(outputsFile) ? outputsFile : join(runDir, outputsFile);
+      opts = { outputsByAsin: JSON.parse(await readFile(path, "utf8")) };
+    }
+    const d = await main(runDir, keyword, opts);
+    console.log(`Wrote results.js — ${d.survivors.length} survivors, ${d.eliminated.length} eliminated.`);
+  };
+  run().catch((e) => {
+    console.error(e.message);
+    process.exit(1);
+  });
 }

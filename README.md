@@ -26,9 +26,10 @@ See the table in [`SKILL.md`](./SKILL.md#preconditions--setup-read-once). In sho
 |---|---|
 | Chrome + the Claude-in-Chrome MCP extension (connected) | ✅ |
 | **1688.com** account, logged in | ✅ |
-| Internet access to **Profitlee's public calc API** (no token) | ✅ |
+| Internet access to **Profitlee's public calc API** (no token) — unless `profitlee-mcp` is installed | ✅ |
 | Node.js ≥ 18 · Python 3 (or any static server) | ✅ |
 | Amazon — logged-in Chrome profile | recommended |
+| [**`profitlee-mcp`**](https://www.npmjs.com/package/profitlee-mcp) — Phase 3 auto-uses it instead of the HTTP API; no token | optional |
 | Helium 10 extension | optional |
 
 ## Install & setup
@@ -61,6 +62,12 @@ Phase 3 sends each product to [Profitlee](https://profitlee.com)'s **public,
 no-auth** calculation endpoint and uses the returned cost stack verbatim — the
 skill does **not** reimplement FBA fee math. The engine is the single source of
 truth (US / DE / JP marketplaces).
+
+> ⚡ **Optional — [`profitlee-mcp`](https://www.npmjs.com/package/profitlee-mcp):**
+> if this MCP server is installed, the skill auto-detects it and calls its
+> `calculate_profit` tool instead of the HTTP endpoint. Same engine, same numbers,
+> no token — it just skips the network round-trip. No setup is needed to use the
+> HTTP fallback below.
 
 > 📖 **Profitlee API docs:** <https://profitlee.com/docs/api> — the authoritative,
 > up-to-date reference (free, country-accurate FBA/FBM fee calculations). The

@@ -363,36 +363,39 @@ not share or commit it.
 ## Phase 3 — Calculate & write results.js
 
 The FBA math lives in Profitlee's tested calc engine, not in this skill. Phase 3
-sends each product to `POST https://profitlee.com/api/v1/calculate` (public, no auth) and writes
-`results.js` from the responses. Do **not** hand-roll fee tables here.
+sends each product to that engine and writes `results.js` from the responses. Do
+**not** hand-roll fee tables here.
+
+There are two transports for the same engine (auto-detected in §3.3): the
+**`profitlee-mcp`** tool (`mcp__profitlee__calculate_profit`) if it is installed,
+otherwise the **public HTTP API** (`POST https://profitlee.com/api/v1/calculate`,
+no token). Both share the same defaults and the same helper, so the resulting
+`results.js` is identical either way.
 
 ### 3.1 Preconditions
 
 - `<run-dir>/products.json` and `<run-dir>/fob.json` both exist and cover the
   same ASINs (Phase 2 completed with no hard-stop).
-- Internet access (Phase 3 POSTs to Profitlee's public calc API — no token).
+- Either the `profitlee-mcp` tool is available, **or** internet access to
+  Profitlee's public calc API (no token). See §3.3 — the transport auto-detects.
 
-### 3.2 Write and run the calc helper
+### 3.2 Write the calc helper
 
-The helper has **no dependencies** (Node ≥18 built-ins only). Write the script
-below verbatim to `<run-dir>/calc.mjs`, then run it:
+The helper has **no dependencies** (Node ≥18 built-ins only). It maps calc outputs
+into the report template's shape (margins as whole percents;
+`ppcCost`/`returnLoss`/`tier` field names; `fob = fobUsd × packCount`), filters
+survivors (`netProfitAfterPPC > 0`), sorts by net margin then monthly net, badges
+the top 3 with margin ≥ 15%, and writes `<run-dir>/results.js`. Both transports in
+§3.3 share it. It also exposes two helper modes used by the MCP path:
+`--emit-payloads` (writes `payloads.json`, no network) and `--outputs <file>`
+(maps from pre-computed outputs, no network).
 
-```bash
-node "<run-dir>/calc.mjs" "<run-dir>" "<keyword>"
-```
-
-It fires all products in parallel, maps the API outputs into the report
-template's shape (margins as whole percents; `ppcCost`/`returnLoss`/`tier` field
-names; `fob = fobUsd × packCount`), filters survivors (`netProfitAfterPPC > 0`),
-sorts by net margin then monthly net, badges the top 3 with margin ≥ 15%, and
-writes `<run-dir>/results.js`.
-
-Write this to `<run-dir>/calc.mjs`:
+Write this verbatim to `<run-dir>/calc.mjs`:
 
 ```js
 // calc.mjs
 import { readFile, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join, isAbsolute } from "node:path";
 import { pathToFileURL } from "node:url";
 
 const API_URL = "https://profitlee.com/api/v1/calculate";
@@ -515,6 +518,19 @@ export async function callApi(payload, fetchImpl = fetch) {
   return out;
 }
 
+export async function emitPayloads(runDir) {
+  const products = JSON.parse(await readFile(join(runDir, "products.json"), "utf8"));
+  const fob = JSON.parse(await readFile(join(runDir, "fob.json"), "utf8"));
+  const fobMap = new Map(fob.map((f) => [f.asin, f]));
+  const payloads = products.map((p) => {
+    const f = fobMap.get(p.asin);
+    if (!f) throw new Error(`no fob.json entry for ${p.asin}`);
+    return { asin: p.asin, payload: buildPayload(p, f) };
+  });
+  await writeFile(join(runDir, "payloads.json"), JSON.stringify(payloads, null, 2));
+  return payloads;
+}
+
 export async function main(runDir, keyword, opts = {}) {
   const fetchImpl = opts.fetchImpl || fetch;
 
@@ -526,7 +542,14 @@ export async function main(runDir, keyword, opts = {}) {
     products.map(async (p) => {
       const f = fobMap.get(p.asin);
       if (!f) throw new Error(`no fob.json entry`);
-      const outputs = await callApi(buildPayload(p, f), fetchImpl);
+      let outputs;
+      if (opts.outputsByAsin) {
+        const raw = opts.outputsByAsin[p.asin];
+        if (!raw) throw new Error(`no outputs for ${p.asin}`);
+        outputs = raw.result || raw; // tolerate {result: CalcOutputs} (MCP) or a raw CalcOutputs
+      } else {
+        outputs = await callApi(buildPayload(p, f), fetchImpl);
+      }
       return mapOutputs(p, f, outputs);
     })
   );
@@ -580,26 +603,77 @@ export async function main(runDir, keyword, opts = {}) {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const [runDir, keyword] = process.argv.slice(2);
+  const argv = process.argv.slice(2);
+  const runDir = argv[0];
+  const keyword = argv[1];
+  const emitFlag = argv.includes("--emit-payloads");
+  const outIdx = argv.indexOf("--outputs");
+  const outputsFile = outIdx >= 0 ? argv[outIdx + 1] : null;
   if (!runDir || !keyword) {
-    console.error('Usage: node calc.mjs <run-dir> "<keyword>"');
+    console.error('Usage: node calc.mjs <run-dir> "<keyword>" [--emit-payloads | --outputs <file>]');
     process.exit(1);
   }
-  main(runDir, keyword)
-    .then((d) => console.log(`Wrote results.js — ${d.survivors.length} survivors, ${d.eliminated.length} eliminated.`))
-    .catch((e) => {
-      console.error(e.message);
-      process.exit(1);
-    });
+  const run = async () => {
+    if (emitFlag) {
+      const payloads = await emitPayloads(runDir);
+      console.log(`Wrote payloads.json — ${payloads.length} products.`);
+      return;
+    }
+    let opts = {};
+    if (outputsFile) {
+      const path = isAbsolute(outputsFile) ? outputsFile : join(runDir, outputsFile);
+      opts = { outputsByAsin: JSON.parse(await readFile(path, "utf8")) };
+    }
+    const d = await main(runDir, keyword, opts);
+    console.log(`Wrote results.js — ${d.survivors.length} survivors, ${d.eliminated.length} eliminated.`);
+  };
+  run().catch((e) => {
+    console.error(e.message);
+    process.exit(1);
+  });
 }
 ```
 
-### 3.3 Hard-stop on failure
+### 3.3 Pick the transport and run
 
-If any product's API call fails (non-200, validation error, network),
-`calc.mjs` exits non-zero, prints the failing ASIN(s), and writes **no**
-`results.js`. Resolve the cause (e.g. set the token, retry transient network)
-and re-run — never edit `results.js` by hand.
+Check whether the tool **`mcp__profitlee__calculate_profit`** is available in this
+session.
+
+**If it is — MCP path** (preferred; no network from Node):
+
+1. Emit the per-product payloads:
+   ```bash
+   node "<run-dir>/calc.mjs" "<run-dir>" "<keyword>" --emit-payloads
+   ```
+   This writes `<run-dir>/payloads.json` — an array of `{ asin, payload }`, where
+   each `payload` is a ready-to-send argument object.
+2. For **every** entry in `payloads.json`, call `mcp__profitlee__calculate_profit`
+   with `entry.payload` as the arguments. Collect the results into an object keyed
+   by ASIN: `{ "<asin>": <result>, ... }`. Store each tool result as-is — the helper
+   accepts either the raw calc object or a `{ "result": … }` wrapper. **If any call
+   errors, hard-stop** — do not write `outputs.json`, do not continue (no partial
+   `results.js`).
+3. Write that object to `<run-dir>/outputs.json`, then map + rank + write:
+   ```bash
+   node "<run-dir>/calc.mjs" "<run-dir>" "<keyword>" --outputs outputs.json
+   ```
+
+**If it is not — HTTP path** (fallback): a single run POSTs each product to the
+public API in parallel:
+
+```bash
+node "<run-dir>/calc.mjs" "<run-dir>" "<keyword>"
+```
+
+Either way the helper writes `<run-dir>/results.js`.
+
+### 3.4 Hard-stop on failure
+
+If any product's calc fails (MCP error, HTTP non-200, validation error, network),
+the path hard-stops and writes **no** `results.js`. On the MCP path, an errored
+tool call means you must stop before writing `outputs.json`; on the HTTP path,
+`calc.mjs` exits non-zero and prints the failing ASIN(s). Resolve the cause
+(retry transient network) and re-run — never edit `results.js` by hand.
 
 The inputs `calc.mjs` sends per product: physical dims + weight (products.json),
 `fob`=fobUsd×packCount, `headShip`=$0.30×packCount, `duty`=0, price + monthlyVolume,
