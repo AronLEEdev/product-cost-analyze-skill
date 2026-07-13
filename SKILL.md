@@ -69,9 +69,37 @@ Phase 3 calls **Profitlee's public calc engine** at
 `https://profitlee.com/api/v1/calculate` — no API key, no auth, nothing to set
 up. Full API reference: <https://profitlee.com/docs/api>.
 
+## Caching (14-day TTL — re-runs cost ~0 browser work)
+
+The Amazon scrape (Phase 1) and especially the **1688 batch** (Phase 2 — slow ~1–2 min,
+and it creates a real sourcing task on the user's account each run) are the expensive
+parts. Cache each by keyword, 14-day TTL, so re-running the same keyword reuses them.
+
+- **slug** = keyword lowercased, every run of non-alphanumerics → `-`
+  (`reusable beeswax bread bag` → `reusable-beeswax-bread-bag`).
+- **Check** before the phase; on a hit, copy it in and **skip that phase's browser work**:
+  ```bash
+  CACHE=~/Documents/product-research/_cache/cost
+  HIT=$(find "$CACHE" -name "<artifact>__<slug>.json" -mtime -14 2>/dev/null | head -1)
+  [ -n "$HIT" ] && cp "$HIT" "<run-dir>/<artifact>.json" && echo "CACHE HIT <artifact>"
+  ```
+- **Save** after the phase completes cleanly (only when it was NOT a cache hit):
+  ```bash
+  mkdir -p "$CACHE" && cp "<run-dir>/<artifact>.json" "$CACHE/<artifact>__<slug>.json"
+  ```
+
+Cached artifacts: **`products`** (Phase 1) and **`fob`** (Phase 2). Never cache
+partial/hard-stopped data. Phase 3 (Profitlee) is fast and free — always recompute
+`results.js` from the cached inputs so price/fee assumptions stay current. To force a
+fresh pull, delete the cache file. Reusing a cached `fob` also avoids creating a new
+1688 sourcing task.
+
 ## Phase 1 — Keyword search on Amazon (Claude-in-Chrome MCP)
 
 Goal: capture the top 10 products (ASIN, title, price, volume, image, pack count) filtered to a $10–$50 price band.
+
+> **Cache first:** run the §Caching check for `products`. On a hit, load the cached
+> `products.json` and skip §1.1–1.5. Save it to cache after §1.5 writes it clean.
 
 ### 1.1 Browser setup
 
@@ -177,6 +205,10 @@ Goal: upload all product images at once to 1688's batch image-sourcing tool
 ("图片批量找") and extract a wholesale FOB reference + a seller link per product
 from the single results page. **Real 1688 data only — no estimation, no Taobao
 fallback. If access is blocked, stop and wait for the user to resolve it.**
+
+> **Cache first:** run the §Caching check for `fob`. On a hit, load the cached
+> `fob.json` and skip all of Phase 2 (no re-upload, no new sourcing task). Save it to
+> cache after §2.4 writes it clean (all products mapped, no hard-stop).
 
 ### 2.1 Setup — require a logged-in batch tab
 
