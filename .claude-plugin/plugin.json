@@ -1,0 +1,11 @@
+{
+  "name": "product-cost-analyze",
+  "displayName": "Product Cost Analyze (FBA Margins)",
+  "version": "1.0.0",
+  "description": "FBA profitability for a product keyword — real 1688 wholesale FOB + Profitlee fee engine → a ranked net-margin report with a recommended price band.",
+  "author": { "name": "Aron Lee", "url": "https://github.com/AronLEEdev" },
+  "homepage": "https://github.com/AronLEEdev/product-cost-analyze-skill",
+  "repository": "https://github.com/AronLEEdev/product-cost-analyze-skill",
+  "license": "MIT",
+  "keywords": ["amazon", "fba", "product-research", "profitability", "1688", "profitlee", "ecommerce", "claude-skill"]
+}
