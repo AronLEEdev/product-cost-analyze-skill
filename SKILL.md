@@ -18,10 +18,11 @@ All outputs go into a run directory, e.g. `~/Documents/product-research/<keyword
 | `results.js` | Phase 3 | `window.__FBA_DATA__ = {...}` — loaded by the template |
 | `report.html` | **one-time copy** | Copy of the bundled template (copy, don't regenerate) |
 
-**This skill is a single file.** A user only needs `SKILL.md` — the two runtime
+**This skill is a single file.** A user only needs `SKILL.md` — the runtime
 assets are produced on demand into the run dir:
 - `calc.mjs` (Phase 3 helper) is **written from the copy embedded in this file** (§3.2). No dependencies beyond Node ≥18 built-ins.
 - `report-template.html` (Phase 4 renderer) is **fetched from the skill's repo** on first run (§Phase 4) and saved as `report.html`.
+- `serve-report.py` (Phase 4 server) is **fetched from the skill's repo** on first run. It serves the run dir and adds an `/export.pdf` endpoint that backs the report's **Save as PDF** button.
 
 See Phase 4 for serving + opening the report.
 
@@ -168,6 +169,36 @@ Phase 3 needs L/W/H/weight. For each ASIN, `mcp__Claude_in_Chrome__navigate` to 
 
 Parse `"... 13.7 x 5.31 x 1.57 inches"` → `{L:13.7, W:5.31, H:1.57}` and `"8.8 ounces"` → `weight: 0.55 lb` (ounces ÷ 16).  
 If a listing has no dimensions, use category-typical estimates and flag as `dimsSource: "estimated"` in `products.json`.
+
+> ⚠️ **HARD RULE — multipack dimensions must cover the SHIPPED unit.**
+> FBA charges on the package Amazon ships, which for an N-pack is the whole carton.
+> Amazon's detail page is inconsistent about this, and getting it wrong understates
+> the fulfilment fee on exactly the dim-weight-sensitive products where it hurts most.
+>
+> **Whenever `packCount > 1`, you MUST classify the scraped dims before using them:**
+>
+> | What the page shows | Meaning | Action |
+> |---|---|---|
+> | `Package Dimensions` (3 numbers) | the shipped carton | ✅ use as-is, `dimsSource: "scraped"` |
+> | `Product/Item Dimensions L×W×H` (3 numbers) | usually the carton on multipacks | ✅ use, but sanity-check against unit size |
+> | **`Item Dimensions W × H` (only 2 numbers)** | **ONE unit** — never the carton | ❌ **do not use** — derive the carton |
+> | `Item Weight` ≈ one unit's plausible weight | **ONE unit** | ❌ **do not use** — multiply |
+>
+> **Two-number dimensions are the tell.** A carton always has three. `3.94"W × 11.02"H`
+> is a single cylinder's diameter and height.
+>
+> **Deriving the carton** (label `dimsSource: "derived-Npack"` and record a `dimsNote`
+> naming the published figures you derived from):
+> - Pack the N units in the tightest realistic arrangement (2 → side by side;
+>   4 → 2×2), then add ~0.2 in per axis for wall thickness.
+> - `weight = N × unit weight + ~0.15 lb carton tare`.
+> - Never silently reuse single-unit dims for an N-pack.
+>
+> **Cross-check:** `Item Weight ÷ packCount` should be a plausible weight for ONE unit.
+> If the published weight is only plausible as a single unit, it IS a single unit.
+>
+> Because this is a derivation and not a measurement, the report and any write-up must
+> say so, and sourcing must confirm the real carton spec with the factory before ordering.
 
 ### 1.5 Write products.json
 
@@ -723,8 +754,18 @@ can't read (the browser blocks the local sub-resource fetch), so serve the run d
 [ -f "<output-dir>/report.html" ] || curl -fsSL \
   https://raw.githubusercontent.com/AronLEEdev/product-cost-analyze-skill/main/report-template.html \
   -o "<output-dir>/report.html"
-python3 -m http.server 7860 --directory "<output-dir>" &
+curl -fsSL \
+  https://raw.githubusercontent.com/AronLEEdev/product-cost-analyze-skill/main/serve-report.py \
+  -o "<output-dir>/serve-report.py"
+python3 "<output-dir>/serve-report.py" "<output-dir>" 7860 &
 ```
+
+> **PDF export.** The report carries a **Save as PDF** button. It downloads a real
+> (vector, selectable-text) PDF by calling this server's `/export.pdf` endpoint, which
+> renders the page with headless Chrome. If you serve the directory with plain
+> `python3 -m http.server` instead, the endpoint is absent and the button falls back to
+> the browser's print dialog — so both paths work, one is just nicer. `serve-report.py`
+> binds to 127.0.0.1 only and needs Chrome/Chromium/Edge installed to render.
 
 Then `mcp__Claude_in_Chrome__navigate` to `http://localhost:7860/report.html`
 (use a fresh port if a prior server is caching an old `results.js`). The template
