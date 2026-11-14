@@ -1,6 +1,6 @@
 ---
 name: product-cost-analyze-for-fba
-description: Perform FBA product-cost analysis for ecommerce sellers. Given a product keyword, drive the user's logged-in Chrome via the Claude-in-Chrome MCP to capture top Amazon listings (volume from "bought in past month" badges), batch reverse-image-search 1688.com for wholesale FOB prices, compute FBA fees via the Profitlee calc API, and render a static HTML profitability report.
+description: Perform FBA product-cost analysis for ecommerce sellers. Given a product keyword, drive the user's logged-in Chrome via the Claude-in-Chrome MCP to capture top Amazon listings (volume from "bought in past month" badges), batch reverse-image-search 1688.com for wholesale FOB prices, compute FBA fees via the Profitlee calc API, and render a static HTML report of margins before advertising (ads are priced by the product-ppc-analysis skill).
 ---
 
 # Product Research Procedure
@@ -446,9 +446,17 @@ no token). Both share the same defaults and the same helper, so the resulting
 
 The helper has **no dependencies** (Node ≥18 built-ins only). It maps calc outputs
 into the report template's shape (margins as whole percents;
-`ppcCost`/`returnLoss`/`tier` field names; `fob = fobUsd × packCount`), filters
-survivors (`netProfitAfterPPC > 0`), sorts by net margin then monthly net, badges
-the top 3 with margin ≥ 15%, and writes `<run-dir>/results.js`. Both transports in
+`returnLoss`/`tier` field names; `fob = fobUsd × packCount`), filters
+survivors (`profitBeforePPC > 0`), sorts by margin before ads then monthly profit
+before ads, badges the top 3 with margin before ads ≥ 30%, and writes
+`<run-dir>/results.js`.
+
+**Margins are before advertising.** The helper sends `ppcAcos: 0`, so Profitlee's net
+profit is the profit per sale before ads (`profitBeforePPC`, `marginBeforePPC`,
+`monthlyBeforePPC`). `marginBeforePPC` is also the break-even ACoS. It also writes
+`cashPerSale` (price − referral − FBA − return loss) for the cash view. Ad cost is priced
+from market suggested bids by the **product-ppc-analysis** skill, which reads this
+`results.js`; never re-add a flat ACoS guess here. Both transports in
 §3.3 share it. It also exposes two helper modes used by the MCP path:
 `--emit-payloads` (writes `payloads.json`, no network) and `--outputs <file>`
 (maps from pre-computed outputs, no network).
@@ -465,7 +473,10 @@ const API_URL = "https://profitlee.com/api/v1/calculate";
 
 const CONSTANTS = {
   region: "us",
-  ppcAcos: 0.20,
+  // Advertising is NOT priced here. Margins are before ads; the product-ppc-analysis
+  // skill prices ads from market suggested bids. A flat ACoS guess hid products whose
+  // clicks cost more than a sale earns (a $13.99 item with $2.50 clicks still "passed").
+  ppcAcos: 0,
   returnRate: 0.05,
   referralPct: 0.15,
   isApparel: false,
@@ -537,27 +548,50 @@ export function mapOutputs(product, fobEntry, outputs) {
     totalCost: outputs.totalCost,
     grossProfit: outputs.grossProfit,
     grossMargin: +(outputs.grossMargin * 100).toFixed(2),
-    ppcCost: outputs.ppcCostPerUnit,
     returnLoss: outputs.returnLossPerUnit,
-    netProfitAfterPPC: outputs.netProfitAfterPPC,
-    netMarginAfterPPC: +(outputs.netMarginAfterPPC * 100).toFixed(2),
-    monthlyNetAfterPPC: Math.round(outputs.monthlyNetAfterPPC),
+    ...beforeAds(product, outputs),
     recommended: false,
     badge: null,
   };
 }
 
+/** Profit and cash per sale BEFORE advertising.
+ *  profitBeforePPC = Profitlee net profit with any ad cost added back (0 when ppcAcos is 0).
+ *  marginBeforePPC (whole %) is also the break-even ACoS: ads may take up to this share of
+ *  the price before the sale loses money.
+ *  cashPerSale = what a sale pays out once stock and freight are already paid:
+ *  price − referral − FBA fulfilment − return loss. The PPC skill uses it for the cash view. */
+export function beforeAds(product, outputs) {
+  const num = (v) => (v == null ? null : Number(v)); // Number(null) === 0 trap
+  const net = num(outputs.netProfitAfterPPC);
+  const ad = num(outputs.ppcCostPerUnit) ?? 0;
+  if (net == null || !Number.isFinite(net)) throw new Error("missing netProfitAfterPPC in calc outputs");
+  const profit = net + ad;
+  const price = Number(product.price);
+  const parts = [outputs.referralFee, outputs.fulfillmentFee, outputs.returnLossPerUnit].map(num);
+  const cash = parts.some((v) => v == null || !Number.isFinite(v)) ? null : price - parts[0] - parts[1] - parts[2];
+  return {
+    profitBeforePPC: +profit.toFixed(4),
+    marginBeforePPC: +((profit / price) * 100).toFixed(2),
+    monthlyBeforePPC: Math.round(profit * (Number(product.monthlyVolume) || 0)),
+    cashPerSale: cash == null ? null : +cash.toFixed(4),
+  };
+}
+
+/** Badge threshold: margin before ads, whole percent (Aron, Nov 14 2026). */
+export const BADGE_MARGIN_BEFORE_PPC = 30;
+
 export function selectAndRank(mapped) {
-  const survivors = mapped.filter((p) => p.netProfitAfterPPC > 0);
-  const eliminated = mapped.filter((p) => p.netProfitAfterPPC <= 0);
+  const survivors = mapped.filter((p) => p.profitBeforePPC > 0);
+  const eliminated = mapped.filter((p) => p.profitBeforePPC <= 0);
   survivors.sort((a, b) =>
-    b.netMarginAfterPPC !== a.netMarginAfterPPC
-      ? b.netMarginAfterPPC - a.netMarginAfterPPC
-      : b.monthlyNetAfterPPC - a.monthlyNetAfterPPC
+    b.marginBeforePPC !== a.marginBeforePPC
+      ? b.marginBeforePPC - a.marginBeforePPC
+      : b.monthlyBeforePPC - a.monthlyBeforePPC
   );
   let badge = 0;
   for (const s of survivors) {
-    if (badge < 3 && s.netMarginAfterPPC >= 15) {
+    if (badge < 3 && s.marginBeforePPC >= BADGE_MARGIN_BEFORE_PPC) {
       s.recommended = true;
       s.badge = ++badge;
     }
@@ -635,10 +669,10 @@ export async function main(runDir, keyword, opts = {}) {
 
   const { survivors, eliminated } = selectAndRank(mapped);
 
-  const bestMonthly = survivors.length ? Math.max(...survivors.map((s) => s.monthlyNetAfterPPC)) : 0;
+  const bestMonthly = survivors.length ? Math.max(...survivors.map((s) => s.monthlyBeforePPC)) : 0;
   const marketInsight = survivors.length
-    ? `${survivors.length} of ${mapped.length} products profitable. Top margin: ${survivors[0].netMarginAfterPPC.toFixed(1)}% (${survivors[0].asin}). Best monthly: $${bestMonthly}/mo.`
-    : `0 of ${mapped.length} products profitable.`;
+    ? `${survivors.length} of ${mapped.length} products profitable before ads. Top margin before ads: ${survivors[0].marginBeforePPC.toFixed(1)}% (${survivors[0].asin}). Best monthly before ads: $${bestMonthly}/mo. Run product-ppc-analysis for the margin after ads.`
+    : `0 of ${mapped.length} products profitable, even before ads.`;
 
   const data = {
     keyword,
@@ -650,6 +684,7 @@ export async function main(runDir, keyword, opts = {}) {
       inboundOption: CONSTANTS.inboundOption,
       referralPct: CONSTANTS.referralPct,
       ppcAcos: CONSTANTS.ppcAcos,
+      marginBasis: "beforeAds",
       returnRate: CONSTANTS.returnRate,
       storageSeason: CONSTANTS.storageSeason,
     },
@@ -740,7 +775,7 @@ tool call means you must stop before writing `outputs.json`; on the HTTP path,
 
 The inputs `calc.mjs` sends per product: physical dims + weight (products.json),
 `fob`=fobUsd×packCount, `headShip`=$0.30×packCount, `duty`=0, price + monthlyVolume,
-and the standing assumptions (`ppcAcos` 0.20, `returnRate` 0.05, `referralPct`
+and the standing assumptions (`ppcAcos` 0 — no ad cost, margins are before ads, `returnRate` 0.05, `referralPct`
 0.15, `inboundOption` "single", `storageMonths` 1, `storageSeason` "janSep").
 
 ## Phase 4 — Open report

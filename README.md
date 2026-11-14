@@ -11,7 +11,10 @@ profitability report. Given a keyword, it drives the user's logged-in Chrome
    image-sourcing tool to get a per-unit wholesale **FOB** reference + a seller
    link for each.
 3. **Phase 3 — calc:** send each product to the **Profitlee** calc API and write
-   `results.js` with the full FBA cost stack + margins.
+   `results.js` with the full FBA cost stack + margins **before advertising**.
+   Ad cost is not guessed here: the
+   [product-ppc-analysis](https://github.com/AronLEEdev/product-ppc-analysis-skill)
+   skill prices it from market suggested bids and gives the margin after ads.
 4. **Phase 4 — report:** render a static HTML report from `results.js`.
 
 The procedure lives in [`SKILL.md`](./SKILL.md). The calc helper is
@@ -175,10 +178,25 @@ curl -s -X POST https://profitlee.com/api/v1/calculate \
 
 `calc.mjs` builds the request per product — `fob = unitFobUsd × packCount`,
 `duty` and `headShip` per listing, with the standing defaults (`inboundOption:
-"single"`, `headShip $0.30/unit`, `duty 0`, `referralPct 0.15`, `ppcAcos 0.20`,
+"single"`, `headShip $0.30/unit`, `duty 0`, `referralPct 0.15`, **`ppcAcos 0`**,
 `returnRate 0.05`, `storageSeason "janSep"`) — fans all 10 products out in
 parallel, and maps the responses into `results.js`. Margin fields are multiplied
 by 100 for the report (which renders whole percents).
+
+Because `ppcAcos` is 0, Profitlee's `netProfitAfterPPC` is the profit **before** ads.
+`results.js` names it accordingly:
+
+| `results.js` field | Meaning |
+|---|---|
+| `profitBeforePPC` | profit per sale after all fees, landed cost and returns, before ads |
+| `marginBeforePPC` | the same as a % of price — also the break-even ACoS |
+| `monthlyBeforePPC` | `profitBeforePPC × monthlyVolume` |
+| `cashPerSale` | price − referral − FBA fulfilment − return loss (stock and freight treated as paid) |
+
+Survivors are products with `profitBeforePPC > 0`; the top 3 with `marginBeforePPC ≥ 30`
+get the "recommended" badge. Until Nov 2026 the skill assumed a flat 20% ACoS, which let
+products with expensive clicks pass (a $13.99 pet-hair glove with ~$2.50 clicks showed a
+24% margin and lost money on every ad sale).
 
 ## Files
 

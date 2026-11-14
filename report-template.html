@@ -137,8 +137,17 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
   const esc    = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 
   const a = D.assumptions;
+  // Margins are before advertising (calc sends ppcAcos 0). A results.js written before this
+  // change carries the old after-ads fields: add its ad cost back so both read the same way.
+  for (const p of [...D.survivors, ...D.eliminated]) {
+    if (p.profitBeforePPC == null && p.netProfitAfterPPC != null) {
+      p.profitBeforePPC = p.netProfitAfterPPC + (p.ppcCost || 0);
+      p.marginBeforePPC = p.price ? (p.profitBeforePPC / p.price) * 100 : 0;
+      p.monthlyBeforePPC = Math.round(p.profitBeforePPC * (p.monthlyVolume || 0));
+    }
+  }
   const bestMargin = D.survivors.length ? D.survivors[0] : null;
-  const bestMonthly = D.survivors.length ? [...D.survivors].sort((x,y)=>y.monthlyNetAfterPPC-x.monthlyNetAfterPPC)[0] : null;
+  const bestMonthly = D.survivors.length ? [...D.survivors].sort((x,y)=>y.monthlyBeforePPC-x.monthlyBeforePPC)[0] : null;
 
   function tagBrand(p) {
     if (p.brand === 'Generic') return `<span class="tag tag-generic">Generic</span>`;
@@ -161,9 +170,10 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
       : `<span class="link-btn link-none">${label1688} ${p.fobSource === 'estimated' ? '(est. — no link)' : '(link unavailable)'}</span>`;
     return `<div class="links">${amz}${fob1688}</div>`;
   }
+  // Before-ads margin = the most ads may take. 30%+ earns the badge; under 20% leaves little room.
   function marginColor(m) {
-    if (m >= 20) return 'green';
-    if (m >= 12) return 'orange';
+    if (m >= 30) return 'green';
+    if (m >= 20) return 'orange';
     return 'red';
   }
 
@@ -180,11 +190,11 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
   }
 
   function fullCard(p, i) {
-    const mc = marginColor(p.netMarginAfterPPC);
+    const mc = marginColor(p.marginBeforePPC);
     const rankLabel = p.badge ? ['','⭐ #1 RECOMMENDED','🥈 #2 RECOMMENDED','🥉 #3 RECOMMENDED'][p.badge] : '';
     const rankClass = p.badge ? `rank rank-${p.badge}` : '';
-    const warn = p.netMarginAfterPPC < 5 && p.netProfitAfterPPC > 0
-      ? `<div class="warn-msg">⚠️ Marginal — only ${p.netMarginAfterPPC.toFixed(1)}% net margin after PPC. Consider raising price or sourcing cheaper.</div>`
+    const warn = p.marginBeforePPC < 20 && p.profitBeforePPC > 0
+      ? `<div class="warn-msg">⚠️ Thin — only ${p.marginBeforePPC.toFixed(1)}% margin before ads, so ads can take at most ${p.marginBeforePPC.toFixed(1)}% of sales (ACoS). Consider raising price or sourcing cheaper.</div>`
       : '';
     return `
     <div class="card${p.recommended ? ' rec' : ''}">
@@ -210,8 +220,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
         </div>
       </div>
       <div class="metrics">
-        <div class="metric ${mc}"><div class="ml">Net after PPC + returns</div><div class="mv">${p.netMarginAfterPPC.toFixed(1)}%</div><div class="ms">${fmtUsd(p.netProfitAfterPPC)}/unit</div></div>
-        <div class="metric ${mc}"><div class="ml">Monthly Net Profit</div><div class="mv">${fmtK(p.monthlyNetAfterPPC)}</div><div class="ms">at ${p.monthlyVolume.toLocaleString()} units</div></div>
+        <div class="metric ${mc}"><div class="ml">Margin before ads (incl. returns)</div><div class="mv">${p.marginBeforePPC.toFixed(1)}%</div><div class="ms">${fmtUsd(p.profitBeforePPC)}/unit · break-even ACoS</div></div>
+        <div class="metric ${mc}"><div class="ml">Monthly profit before ads</div><div class="mv">${fmtK(p.monthlyBeforePPC)}</div><div class="ms">at ${p.monthlyVolume.toLocaleString()} units</div></div>
         <div class="metric blue"><div class="ml">Gross Margin</div><div class="mv">${p.grossMargin.toFixed(1)}%</div><div class="ms">${fmtUsd(p.grossProfit)}/unit</div></div>
         <div class="metric orange"><div class="ml">Monthly Revenue</div><div class="mv">${fmtK(p.monthlyVolume * p.price)}</div><div class="ms">Gross: ${fmtK(p.monthlyVolume * p.grossProfit)}</div></div>
       </div>
@@ -224,7 +234,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
   }
 
   function miniCard(p) {
-    const mc = marginColor(p.netMarginAfterPPC);
+    const mc = marginColor(p.marginBeforePPC);
     return `
     <div class="card">
       <div class="card-top">
@@ -236,8 +246,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
         </div>
       </div>
       <div class="mini-metrics">
-        <div class="metric ${mc}"><div class="ml">Net Margin</div><div class="mv" style="font-size:16px;">${p.netMarginAfterPPC.toFixed(1)}%</div><div class="ms">${fmtUsd(p.netProfitAfterPPC)}/unit</div></div>
-        <div class="metric blue"><div class="ml">Monthly Net</div><div class="mv" style="font-size:16px;">${fmtK(p.monthlyNetAfterPPC)}</div><div class="ms">Gross: ${fmtUsd(p.grossProfit)}/unit</div></div>
+        <div class="metric ${mc}"><div class="ml">Margin before ads</div><div class="mv" style="font-size:16px;">${p.marginBeforePPC.toFixed(1)}%</div><div class="ms">${fmtUsd(p.profitBeforePPC)}/unit</div></div>
+        <div class="metric blue"><div class="ml">Monthly before ads</div><div class="mv" style="font-size:16px;">${fmtK(p.monthlyBeforePPC)}</div><div class="ms">Gross: ${fmtUsd(p.grossProfit)}/unit</div></div>
       </div>
     </div>`;
   }
@@ -249,14 +259,14 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
   let html = `
   <div class="header">
     <h1>FBA Product Research: <span>${esc(D.keyword)}</span></h1>
-    <div class="sub">Generated ${esc(D.date)} · US Marketplace · FBA 2026 · ACoS ${(a.ppcAcos*100).toFixed(0)}% · ${a.storageSeason === 'octDec' ? 'Oct–Dec' : 'Jan–Sep'} Storage · ¥${a.exchangeRate}/$1</div>
+    <div class="sub">Generated ${esc(D.date)} · US Marketplace · FBA 2026 · Margins before ads · ${a.storageSeason === 'octDec' ? 'Oct–Dec' : 'Jan–Sep'} Storage · ¥${a.exchangeRate}/$1</div>
   </div>
 
   <div class="summary-bar">
     <div class="stat"><div class="label">Products Analyzed</div><div class="value">${D.survivors.length + D.eliminated.length}</div><div class="hint">$${D.assumptions.priceMin||10}–$${D.assumptions.priceMax||50} price band</div></div>
     <div class="stat"><div class="label">Profitable Survivors</div><div class="value">${D.survivors.length}</div><div class="hint">${D.eliminated.length} eliminated · ${D.retried ? 'page-2 retry ran' : 'no retry needed'}</div></div>
-    <div class="stat"><div class="label">Best Net Margin</div><div class="value" style="color:#34c759">${bestMargin ? bestMargin.netMarginAfterPPC.toFixed(1)+'%' : '—'}</div><div class="hint">${bestMargin ? esc(bestMargin.title.split(' ').slice(0,4).join(' '))+'…' : ''}</div></div>
-    <div class="stat"><div class="label">Best Monthly Net</div><div class="value" style="color:#0071e3">${bestMonthly ? fmtK(bestMonthly.monthlyNetAfterPPC) : '—'}</div><div class="hint">${bestMonthly ? bestMonthly.monthlyVolume.toLocaleString()+' units/mo' : ''}</div></div>
+    <div class="stat"><div class="label">Best Margin Before Ads</div><div class="value" style="color:#34c759">${bestMargin ? bestMargin.marginBeforePPC.toFixed(1)+'%' : '—'}</div><div class="hint">${bestMargin ? esc(bestMargin.title.split(' ').slice(0,4).join(' '))+'…' : ''}</div></div>
+    <div class="stat"><div class="label">Best Monthly Before Ads</div><div class="value" style="color:#0071e3">${bestMonthly ? fmtK(bestMonthly.monthlyBeforePPC) : '—'}</div><div class="hint">${bestMonthly ? bestMonthly.monthlyVolume.toLocaleString()+' units/mo' : ''}</div></div>
   </div>`;
 
   if (D.marketInsight) {
@@ -286,7 +296,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
             <div class="tags">${tagBrand(p)}<span class="tag">$${p.price.toFixed(2)} · ~${p.monthlyVolume.toLocaleString()}/mo</span></div>
           </div>
         </div>
-        <div class="elim-msg">❌ Net profit after PPC: <strong>${fmtUsd(p.netProfitAfterPPC)}/unit (${p.netMarginAfterPPC.toFixed(1)}%)</strong>. Price too low to absorb FBA + PPC.</div>
+        <div class="elim-msg">❌ Profit before ads: <strong>${fmtUsd(p.profitBeforePPC)}/unit (${p.marginBeforePPC.toFixed(1)}%)</strong>. Loses money on every sale even with no advertising.</div>
       </div>`;
     });
   }
@@ -300,7 +310,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
   // Footer
   html += `
   <div class="footer">
-    <strong>Assumptions:</strong> FOB rate ¥${a.exchangeRate}/$1 · Duty ${(a.dutyRate*100).toFixed(0)}% · Head-ship $${(a.headShipPerUnit ?? 0.30).toFixed(2)}/unit · Inbound: ${a.inboundOption || 'single'} · ${a.storageSeason==='octDec'?'Oct–Dec':'Jan–Sep'} storage · ACoS ${(a.ppcAcos*100).toFixed(0)}% · Return rate ${(a.returnRate*100).toFixed(0)}% · Referral ${(a.referralPct*100).toFixed(0)}% · FBA 2026 + 3.5% fuel surcharge.<br>
+    <strong>Assumptions:</strong> FOB rate ¥${a.exchangeRate}/$1 · Duty ${(a.dutyRate*100).toFixed(0)}% · Head-ship $${(a.headShipPerUnit ?? 0.30).toFixed(2)}/unit · Inbound: ${a.inboundOption || 'single'} · ${a.storageSeason==='octDec'?'Oct–Dec':'Jan–Sep'} storage · No ad cost: margins are before advertising — run product-ppc-analysis for the margin after ads · Return rate ${(a.returnRate*100).toFixed(0)}% · Referral ${(a.referralPct*100).toFixed(0)}% · FBA 2026 + 3.5% fuel surcharge.<br>
     <strong>Volume source:</strong> ${D.survivors.some(p=>p.volumeSource==='helium10') ? 'Helium 10 (30-day)' : 'Amazon "bought in past month" badge estimates — upgrade to Helium 10 paid for precise data.'}
     ${D.survivors.some(p=>p.dimsSource==='estimated') ? '<br><strong>Dimensions:</strong> Some products used estimated dimensions — verify before committing inventory.' : ''}
   </div>`;

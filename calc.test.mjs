@@ -55,19 +55,46 @@ const SAMPLE_OUTPUTS = {
 test("mapOutputs converts margins to whole percent", () => {
   const m = mapOutputs(SAMPLE_PRODUCT, SAMPLE_FOB, SAMPLE_OUTPUTS);
   assert.equal(m.grossMargin, 50.9);
-  assert.equal(m.netMarginAfterPPC, 29.07);
+  // ad cost added back: 6.3935 + 4.398 = 10.7915 → 10.7915 / 21.99
+  assert.equal(m.marginBeforePPC, 49.07);
+});
+
+test("mapOutputs reports profit before ads and drops the ad-cost guess", () => {
+  const m = mapOutputs(SAMPLE_PRODUCT, SAMPLE_FOB, SAMPLE_OUTPUTS);
+  assert.equal(m.profitBeforePPC, 10.7915);
+  assert.equal("ppcCost" in m, false);
+  assert.equal("netProfitAfterPPC" in m, false);
+  assert.equal("netMarginAfterPPC" in m, false);
+});
+
+test("mapOutputs gives cash per sale = price - referral - FBA - return loss", () => {
+  const m = mapOutputs(SAMPLE_PRODUCT, SAMPLE_FOB, SAMPLE_OUTPUTS);
+  assert.equal(m.cashPerSale, +(21.99 - 3.2985 - 6.1272 - 0.4013).toFixed(4));
+});
+
+test("mapOutputs leaves cash per sale unknown (null, not 0) when a fee is missing", () => {
+  const m = mapOutputs(SAMPLE_PRODUCT, SAMPLE_FOB, { ...SAMPLE_OUTPUTS, fulfillmentFee: null });
+  assert.equal(m.cashPerSale, null);
+});
+
+test("mapOutputs throws when net profit is missing (no silent zero)", () => {
+  assert.throws(() => mapOutputs(SAMPLE_PRODUCT, SAMPLE_FOB, { ...SAMPLE_OUTPUTS, netProfitAfterPPC: null }), /missing netProfitAfterPPC/);
+});
+
+test("buildPayload sends no ad cost (ppcAcos 0)", () => {
+  const p = buildPayload(SAMPLE_PRODUCT, SAMPLE_FOB);
+  assert.equal(p.ppcAcos, 0);
 });
 
 test("mapOutputs renames API field names to template names", () => {
   const m = mapOutputs(SAMPLE_PRODUCT, SAMPLE_FOB, SAMPLE_OUTPUTS);
-  assert.equal(m.ppcCost, 4.398);
   assert.equal(m.returnLoss, 0.4013);
   assert.equal(m.tier, "Large Standard");
 });
 
 test("mapOutputs rounds monthly net and passes through identity fields", () => {
   const m = mapOutputs(SAMPLE_PRODUCT, SAMPLE_FOB, SAMPLE_OUTPUTS);
-  assert.equal(m.monthlyNetAfterPPC, 5115);
+  assert.equal(m.monthlyBeforePPC, Math.round(10.7915 * 800));
   assert.equal(m.asin, "B0TEST");
   assert.equal(m.fobRmb, 5.0);
   assert.equal(m.fobUsd, 0.69);
@@ -81,10 +108,10 @@ test("mapOutputs rounds monthly net and passes through identity fields", () => {
 import { selectAndRank } from "./calc.mjs";
 
 function mk(asin, net, margin, monthly) {
-  return { asin, netProfitAfterPPC: net, netMarginAfterPPC: margin, monthlyNetAfterPPC: monthly, recommended: false, badge: null };
+  return { asin, profitBeforePPC: net, marginBeforePPC: margin, monthlyBeforePPC: monthly, recommended: false, badge: null };
 }
 
-test("selectAndRank splits survivors from eliminated on netProfit>0", () => {
+test("selectAndRank splits survivors from eliminated on profit before ads > 0", () => {
   const { survivors, eliminated } = selectAndRank([mk("A", 5, 20, 100), mk("B", -1, -5, 0), mk("C", 0, 0, 0)]);
   assert.deepEqual(survivors.map((s) => s.asin), ["A"]);
   assert.deepEqual(eliminated.map((s) => s.asin).sort(), ["B", "C"]);
@@ -95,16 +122,18 @@ test("selectAndRank sorts by margin desc then monthly net desc", () => {
   assert.deepEqual(survivors.map((s) => s.asin), ["C", "B", "A"]);
 });
 
-test("selectAndRank badges top 3 with margin>=15", () => {
+test("selectAndRank badges top 3 with margin before ads >= 30", () => {
   const { survivors } = selectAndRank([
-    mk("A", 5, 30, 100), mk("B", 5, 25, 100), mk("C", 5, 20, 100), mk("D", 5, 16, 100), mk("E", 5, 10, 100),
+    mk("A", 5, 50, 100), mk("B", 5, 40, 100), mk("C", 5, 30, 100), mk("D", 5, 35, 100), mk("E", 5, 10, 100),
   ]);
-  assert.deepEqual(survivors.filter((s) => s.recommended).map((s) => [s.asin, s.badge]), [["A", 1], ["B", 2], ["C", 3]]);
+  // sorted A 50, B 40, D 35, C 30 → first three badged
+  assert.deepEqual(survivors.filter((s) => s.recommended).map((s) => [s.asin, s.badge]), [["A", 1], ["B", 2], ["D", 3]]);
+  assert.equal(survivors.find((s) => s.asin === "C").badge, null);
   assert.equal(survivors.find((s) => s.asin === "E").badge, null);
 });
 
-test("selectAndRank does not badge sub-15 margins even with <3 badged", () => {
-  const { survivors } = selectAndRank([mk("A", 5, 14, 100), mk("B", 5, 12, 100)]);
+test("selectAndRank does not badge margins under 30 even with <3 badged", () => {
+  const { survivors } = selectAndRank([mk("A", 5, 29.99, 100), mk("B", 5, 12, 100)]);
   assert.equal(survivors.every((s) => s.badge === null), true);
 });
 
@@ -188,7 +217,7 @@ function stubOut(net) {
   return {
     shipWeight: 2.1, sizeTier: "Large Standard", landedCogs: 1.2, inboundFee: 0,
     fulfillmentFee: 6.1, referralFee: 3.3, storageFee: 0.13, totalCost: 10.8,
-    grossProfit: net + 4.8, grossMargin: 0.5, ppcCostPerUnit: 4.4, returnLossPerUnit: 0.4,
+    grossProfit: net + 0.4, grossMargin: 0.5, ppcCostPerUnit: 0, returnLossPerUnit: 0.4,
     netProfitAfterPPC: net, netMarginAfterPPC: net / 22, monthlyNetAfterPPC: net * 100,
   };
 }
